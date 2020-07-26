@@ -20,13 +20,16 @@ export const getGrowthsToMax = function(ns: NS, server: Server): number {
 }
 
 export const getHackDeficit = function(ns: NS, server: Server): number {
-    if (server.static.maxMoney == 0) return 0
+    if (server.static.maxMoney == 0) return 
     return server.static.maxMoney * desiredMoneyRatio - server.dynamic.currentMoney
 }
 
 export const getHacksToTarget = function(ns: NS, server: Server): number {
     if(!server.dynamic.hackable) return 0
-    return ns.hackAnalyzeThreads(server.static.name, getHackDeficit(ns, server))
+    const deficit = getHackDeficit(ns, server)
+    if (deficit <= 0) return 0
+
+    return ns.hackAnalyzeThreads(server.static.name, deficit)
 }
 
 export const getHackTimeToTarget = function(ns: NS, server: Server): number {

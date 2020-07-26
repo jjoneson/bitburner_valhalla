@@ -1,14 +1,15 @@
 import type { BitBurner as NS } from "Bitburner"
 import { Ports, Action, Status } from "./val_lib_enum"
 import { ActionMessage } from "./val_lib_communication"
-import { getCurrentServers, getTotalAvailableRam } from "./val_lib_servers"
+import { getCurrentServers, getTotalAvailableRam, Server } from "./val_lib_servers"
 import { sortServersByValue, getHacksToTarget, getGrowthsToMax, getWeakensToZero } from "./val_lib_stats"
+import { getExpectedFinishTime, getCurrentSeconds } from "./val_lib_math"
 
 const global_servers = new Array
 
 
 interface dispatchable {
-    dispatch(ns: NS): void
+    dispatch(ns: NS, operationTime: number, stats: {ram: number, expectedFinishTime: number}): void
 }
 
 class DispatchAction implements dispatchable {
@@ -22,67 +23,76 @@ class DispatchAction implements dispatchable {
         this.action = action
     }
 
-    public dispatch(ns: NS): number {
+    public dispatch(ns: NS, operationTime: number, stats: {ram: number, expectedFinishTime: number}): number {
         let scriptRam = ns.getScriptRam(this.action)
         let remainingRam = scriptRam * this.threads
-        let remainingThreads = this.threads
 
         for (const server of getCurrentServers(ns, global_servers)) {
-            if (remainingThreads <= 0) break
+            if (this.threads <= 0) break
 
             const schedulableThreads = Math.floor(remainingRam / scriptRam)
-            const scheduledThreads = schedulableThreads > remainingThreads ? remainingThreads : schedulableThreads 
-            remainingRam -= schedulableThreads * scriptRam
-            remainingThreads -= schedulableThreads
+            const scheduledThreads = schedulableThreads > this.threads ? this.threads : schedulableThreads 
+            remainingRam -= scheduledThreads * scriptRam
+            this.threads -= scheduledThreads
 
             ns.exec(this.action, server.static.name, scheduledThreads, this.target, scheduledThreads.toString())
+            stats.expectedFinishTime =  getExpectedFinishTime(operationTime) 
 
             while (!ns.tryWrite(Ports.Actions, JSON.stringify(new ActionMessage(this.action, this.target, scheduledThreads, Status.Processing)))) {
                ns.sleep(100)
             }
         }
-        return remainingThreads
+        stats.ram = getTotalAvailableRam(ns, global_servers)
+        return this.threads
     }
 }
 
+const weaken = async function(ns: NS, target: Server, stats: {ram: number, expectedFinishTime: number}) {
+    const totalWeakensNeeded = getWeakensToZero(ns, target)
+    if (totalWeakensNeeded == 0) return
+
+    const weakenAction = new DispatchAction(target.static.name, totalWeakensNeeded, Action.Weaken)
+    while (weakenAction.dispatch(ns, target.dynamic.weakenTime, stats) > 0) {
+        await ns.sleep(target.dynamic.weakenTime)
+    }
+}
+
+const hack = async function(ns: NS, target: Server, stats: {ram: number, expectedFinishTime: number}) {
+    const totalHacksNeeded = getHacksToTarget(ns, target)
+    if (totalHacksNeeded == 0) return
+
+    const hackAction = new DispatchAction(target.static.name, totalHacksNeeded, Action.Hack)
+    while (hackAction.dispatch(ns, target.dynamic.hackTime, stats) > 0) {
+        await ns.sleep(target.dynamic.hackTime)
+    }
+}
+
+const grow = async function(ns: NS, target: Server, stats: {ram: number, expectedFinishTime: number}) {
+    const totalGrowthsNeeded = getGrowthsToMax(ns, target)
+    if (totalGrowthsNeeded == 0) return
+
+    const growthAction = new DispatchAction(target.static.name, totalGrowthsNeeded, Action.Grow)
+    while (growthAction.dispatch(ns, target.dynamic.growTime, stats) > 0) {
+        await ns.sleep(target.dynamic.growTime)
+    }
+}
 
 export const main = async function (ns: NS) {
     getCurrentServers(ns, global_servers)
+    const stats = {ram: getTotalAvailableRam(ns, global_servers), expectedFinishTime: 0}
     while (true) {
         const targets = sortServersByValue(ns, getCurrentServers(ns, global_servers))
-        let availableRam = getTotalAvailableRam(ns, global_servers)
-        let maxTime = 0
         for (const target of targets) {
-            maxTime = 0
-            // Do Weakening
-            const weakenAction = new DispatchAction(target.static.name, getWeakensToZero(ns, target), Action.Weaken)
-            while (weakenAction.dispatch(ns) > 0) {
-                maxTime = maxTime < target.dynamic.weakenTime ? target.dynamic.weakenTime : maxTime
-                await ns.sleep(target.dynamic.weakenTime)
-            }
-            availableRam = getTotalAvailableRam(ns, global_servers)
-
-            // Do Hacking
-            const hackAction = new DispatchAction(target.static.name, getHacksToTarget(ns, target), Action.Hack)
-            while (hackAction.dispatch(ns) > 0) {
-                maxTime = maxTime < target.dynamic.hackTime ? target.dynamic.hackTime : maxTime
-                await ns.sleep(target.dynamic.hackTime)
-            }
-            availableRam = getTotalAvailableRam(ns, global_servers)
-
-            // Do Growing
-            const growthAction = new DispatchAction(target.static.name, getGrowthsToMax(ns, target), Action.Grow)
-            while (growthAction.dispatch(ns) > 0) {
-                maxTime = maxTime < target.dynamic.growTime ? target.dynamic.growTime : maxTime
-                await ns.sleep(target.dynamic.growTime)
-            }
-            availableRam = getTotalAvailableRam(ns, global_servers)
-
-            if (availableRam <= ns.getScriptRam(Action.Hack)) break
+            await weaken(ns, target, stats)
+            await hack(ns, target, stats)
+            await grow(ns, target, stats)
+            if (stats.ram <= ns.getScriptRam(Action.Hack)) break
         }
-        // Sleep for the length of the current longest running script
-        if (availableRam < ns.getScriptRam(Action.Hack)) {
-            await ns.sleep(maxTime)
+        // Sleep for the length of the last scheduled script
+        if (stats.ram < ns.getScriptRam(Action.Hack)) {
+            const remainingTime = getCurrentSeconds() - stats.expectedFinishTime
+            if (remainingTime > 0) await ns.sleep(1000*remainingTime)
+            stats.expectedFinishTime = 0
         }
     }
 
