@@ -8,13 +8,22 @@ export interface ServerStaticProps {
     maxMoney:number
     minSecurityLevel:number
     growth:number
+
 }
 
 export interface ServerDynamicProps {
     currentSecurityLevel:number
+    currentMoney:number
     availableRam:number
     rooted:boolean
     hackable:boolean
+    weakenTime:number
+    growTime:number
+    hackTime:number
+}
+
+export interface ServerCalculatedProps {
+    hackRatio?:number
 }
 
 export class Server {
@@ -30,8 +39,7 @@ export class Server {
             requiredPortsOpen: ns.getServerNumPortsRequired(hostName),
             totalRam: ns.getServerRam(hostName)[0],
             growth: ns.getServerGrowth(hostName)
-            
-        }  
+        } 
     }
 
     public updateDynamicProps(ns: NS) {
@@ -39,8 +47,11 @@ export class Server {
             availableRam: ns.getServerRam(this.static.name)[1],
             currentSecurityLevel: ns.getServerSecurityLevel(this.static.name),
             hackable: ns.getServerRequiredHackingLevel(this.static.name) <= ns.getHackingLevel(),
-            rooted: ns.hasRootAccess(this.static.name)
-
+            rooted: ns.hasRootAccess(this.static.name),
+            weakenTime: ns.getWeakenTime(this.static.name),
+            growTime: ns.getGrowTime(this.static.name),
+            hackTime: ns.getHackTime(this.static.name),
+            currentMoney: ns.getServerMoneyAvailable(this.static.name)
         }
     }
 }
@@ -83,4 +94,12 @@ export const getHackableServers = function (ns: NS, servers: Server[]): Server[]
 
 export const getUnhackableServers = function (ns: NS, servers: Server[]): Server[] {
     return getCurrentServers(ns, servers).filter(server => !server.dynamic.hackable)
+}
+
+export const getTotalAvailableRam = function (ns: NS, servers: Server[]): number {
+    let availableRam = 0
+    for(const server of getCurrentServers(ns, servers))
+        availableRam += server.dynamic.availableRam
+    
+    return availableRam
 }

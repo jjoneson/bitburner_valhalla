@@ -15,4 +15,5 @@ npm run webserver
 In Bitburner Terminal:
 ```bash
 run val_update.js
+run val_init.js
 ```
