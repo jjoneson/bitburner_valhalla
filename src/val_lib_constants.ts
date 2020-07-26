@@ -30,11 +30,15 @@ export const listenerScript: string = `val_listener.js`
 export const schedulerScript: string = `val_scheduler.js`
 export const copyScript: string = `val_cp.js`
 export const killScript: string = `val_kill.js`
+export const ramScript: string = `val_ram.js`
 export const startupScripts: string[] = [
     crackingScript,
     schedulerScript
 ]
+export const minimumCashReserves: number = 300000000
+export const serverNamePrefix: string = "serv-"
 export const schedulingInterval: number = 12000
+export const ramCost: number = 55000
 export const weakenAmount: number = 0.05
 export const hackAmount: number = 0.002
 export const growAmount: number = 0.004

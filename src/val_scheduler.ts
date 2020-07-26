@@ -21,24 +21,21 @@ class DispatchAction implements dispatchable {
 
     constructor(target: string, threads: number, action: Action) {
         this.target = target
-        this.threads = threads
+        this.threads = Math.ceil(threads)
         this.action = action
     }
 
     public dispatch(ns: NS, operationTime: number, stats: {ram: number, expectedFinishTime: number}): number {
         ns.scp(this.action, this.target)
-        let scriptRam = ns.getScriptRam(this.action)
-        let remainingRam = scriptRam * this.threads
 
         for (const server of getCurrentServers(ns, global_servers)) {
-            const schedulableThreads = Math.floor(remainingRam / scriptRam)
-            if (schedulableThreads <= 0) {
-                this.threads = 0
-                break
-            } 
+            let scriptRam = ns.getScriptRam(this.action, server.static.name)
+            if (this.threads <= 0) break
 
-            const scheduledThreads = schedulableThreads > this.threads ? this.threads : schedulableThreads 
-            remainingRam -= scheduledThreads * scriptRam
+            const schedulableThreads = Math.floor(server.dynamic.availableRam / scriptRam)
+            if (schedulableThreads <= 0) continue
+
+            const scheduledThreads = schedulableThreads >= this.threads ? this.threads : schedulableThreads 
             this.threads -= scheduledThreads
 
             ns.exec(this.action, server.static.name, scheduledThreads, this.target, scheduledThreads.toString())

@@ -1,5 +1,5 @@
 import {BitBurner as NS} from "Bitburner"
-import { initScript, homeServer } from "./val_lib_constants.js"
+import { initScript, homeServer, copyScript } from "./val_lib_constants.js"
 
 const server = "http://localhost:8088"
 const files = [
@@ -18,6 +18,7 @@ const files = [
     "val_lib_servers.js",
     "val_lib_stats.js",
     "val_listener.js",
+    "val_ram.js",
     "val_scheduler.js",
     "val_stocks.js",
     "val_update.js",
@@ -28,5 +29,6 @@ export const main = async function(ns: NS) {
     for (const file of files) {
         await ns.wget(`${server}/${file}`, `${file}`)
     }
+    ns.exec(copyScript, homeServer)
     ns.exec(initScript, homeServer)
 }

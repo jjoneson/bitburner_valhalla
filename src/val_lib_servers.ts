@@ -1,5 +1,5 @@
 import type {BitBurner as NS} from "Bitburner"
-import { info } from "./val_lib_log.js"
+import { serverNamePrefix } from "./val_lib_constants.js"
 
 export interface ServerStaticProps {
     name:string
@@ -45,7 +45,7 @@ export class Server {
 
     public updateDynamicProps(ns: NS) {
         this.dynamic = {
-            availableRam: ns.getServerRam(this.static.name)[1],
+            availableRam: this.static.totalRam - ns.getServerRam(this.static.name)[1],
             currentSecurityLevel: ns.getServerSecurityLevel(this.static.name),
             hackable: ns.getServerRequiredHackingLevel(this.static.name) <= ns.getHackingLevel(),
             rooted: ns.hasRootAccess(this.static.name),
@@ -65,14 +65,21 @@ export const getNewServers = function (ns: NS, servers?: Server[]): Server[] {
     const thisHost = ns.getHostname()
     if (!servers.some(server => server.static.name == thisHost))
         servers.push(new Server(ns, thisHost))
-
+    
     for (let i = 0; i < servers.length; i++) {
+        if (servers[i].static.name.startsWith(serverNamePrefix)) continue
         ns.scan(servers[i].static.name).forEach(hostName => {
             if (!servers.some(server => server.static.name == hostName)) {
                 servers.push(new Server(ns, hostName))
             }
         });
     }
+    
+    for (const purchased of ns.getPurchasedServers()) {
+        if(!servers.some(server => server.static.name == purchased))
+            servers.push(new Server(ns, purchased))
+    }
+    
     return servers;
 }
 
@@ -99,7 +106,7 @@ export const getUnhackableServers = function (ns: NS, servers: Server[]): Server
 
 export const getTotalAvailableRam = function (ns: NS, servers: Server[]): number {
     let availableRam = 0
-    for(const server of getCurrentServers(ns, servers))
+    for(const server of getRootedServers(ns, servers))
         availableRam += server.dynamic.availableRam
     
     return availableRam
