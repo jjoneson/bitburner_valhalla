@@ -1,0 +1,12 @@
+{
+    "compilerOptions": {
+      "target": "ESNext",
+      "noImplicitAny": true,
+      "removeComments": true,
+      "preserveConstEnums": true,
+      "typeRoots": ["./node_modules/@types", "./src"],
+      "outDir": "built"
+    },
+    "include": ["./src/**/*"],
+    "exclude": ["hack", "node_modules"]
+}

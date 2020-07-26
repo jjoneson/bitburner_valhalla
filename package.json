@@ -1,0 +1,20 @@
+{
+  "name": "bitburner_valhalla",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "compile": "tsc ",
+    "compile:libs": "tsc src/lib",
+    "test": "test",
+    "webserver": "node hack/webserver.js -p 8088 -d built --enable_cors"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "typescript": "^3.9.7"
+  }
+}
