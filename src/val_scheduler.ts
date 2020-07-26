@@ -3,7 +3,7 @@ import { Action, Status } from "./val_lib_enum.js"
 import { ActionMessage } from "./val_lib_communication.js"
 import { getCurrentServers, getTotalAvailableRam, Server, getRootedServers } from "./val_lib_servers.js"
 import { sortServersByValue, getHacksToTarget, getGrowthsToMax, getWeakensToZero } from "./val_lib_stats.js"
-import { getExpectedFinishTime } from "./val_lib_math.js"
+import { getExpectedFinishTime, getCurrentSeconds } from "./val_lib_math.js"
 import { info } from "./val_lib_log.js"
 import { schedulingInterval } from "./val_lib_constants.js"
 
@@ -26,9 +26,9 @@ class DispatchAction implements dispatchable {
     }
 
     public dispatch(ns: NS, operationTime: number, stats: {ram: number, expectedFinishTime: number}): number {
-        ns.scp(this.action, this.target)
+        const servers = getCurrentServers(ns, new Array())
 
-        for (const server of getCurrentServers(ns, global_servers)) {
+        for (const server of servers) {
             let scriptRam = ns.getScriptRam(this.action, server.static.name)
             if (this.threads <= 0) break
 
@@ -38,11 +38,12 @@ class DispatchAction implements dispatchable {
             const scheduledThreads = schedulableThreads >= this.threads ? this.threads : schedulableThreads 
             this.threads -= scheduledThreads
 
+            ns.scp(this.action, server.static.name)
             ns.exec(this.action, server.static.name, scheduledThreads, this.target, scheduledThreads.toString())
             stats.expectedFinishTime =  getExpectedFinishTime(operationTime) 
             info(ns, JSON.stringify(new ActionMessage(this.action, this.target, scheduledThreads, Status.Processing, operationTime), null, 2))
         }
-        stats.ram = getTotalAvailableRam(ns, global_servers)
+        stats.ram = getTotalAvailableRam(ns, new Array())
         return this.threads
     }
 }

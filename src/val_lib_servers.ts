@@ -70,21 +70,31 @@ export const getNewServers = function (ns: NS, servers?: Server[]): Server[] {
         if (servers[i].static.name.startsWith(serverNamePrefix)) continue
         ns.scan(servers[i].static.name).forEach(hostName => {
             if (!servers.some(server => server.static.name == hostName)) {
+                try {
                 servers.push(new Server(ns, hostName))
+                } catch{}
             }
         });
     }
     
     for (const purchased of ns.getPurchasedServers()) {
         if(!servers.some(server => server.static.name == purchased))
+            try {
             servers.push(new Server(ns, purchased))
+            } catch{}
     }
     
     return servers;
 }
 
 export const getCurrentServers = function(ns: NS, servers: Server[]): Server[] {
-    getNewServers(ns, servers).forEach(server => server.updateDynamicProps(ns))
+    for (const server of getNewServers(ns, servers)) {
+        try {
+            server.updateDynamicProps(ns)
+        } catch {
+            servers.splice(servers.findIndex(serv => serv.static.name == server.static.name), 1)
+        }
+    }
     return servers
 }
 
