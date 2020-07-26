@@ -1,4 +1,5 @@
 import type {BitBurner as NS} from "Bitburner"
+import { info } from "./val_lib_log.js"
 
 export interface ServerStaticProps {
     name:string

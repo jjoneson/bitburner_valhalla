@@ -1,6 +1,6 @@
 import type {BitBurner as NS} from "Bitburner"
-import { homeServer, stockTradeComission } from "./val_lib_constants"
-import { info } from "./val_lib_log"
+import { homeServer, stockTradeComission } from "./val_lib_constants.js"
+import { info } from "./val_lib_log.js"
 
 let cashReservesLowPercent = 0.1
 let cycles = 2

@@ -31,9 +31,7 @@ export const schedulerScript: string = `val_scheduler.js`
 export const copyScript: string = `val_cp.js`
 export const killScript: string = `val_kill.js`
 export const startupScripts: string[] = [
-    copyScript,
     crackingScript,
-    listenerScript,
     schedulerScript
 ]
 export const schedulingInterval: number = 12000

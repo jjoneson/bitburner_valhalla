@@ -7,8 +7,8 @@
     "lib": "lib"
   },
   "scripts": {
-    "compile": "tsc ",
-    "compile:libs": "tsc src/lib",
+    "compile": "tsc",
+    "watch": "tsc -w",
     "test": "test",
     "webserver": "node hack/webserver.js -p 8088 -d built --enable_cors"
   },

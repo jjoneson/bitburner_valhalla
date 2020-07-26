@@ -1,10 +1,11 @@
 import type {BitBurner as NS} from "Bitburner"
-import { getCurrentServers } from "./val_lib_servers.js"
-import { startupScripts } from "./val_lib_constants.js"
-
-export const global_servers = new Array()
+import { startupScripts, homeServer, killScript } from "./val_lib_constants.js"
 
 export const main = async function(ns: NS) {
-    getCurrentServers(ns, global_servers)
-    startupScripts.forEach(script => ns.spawn(script, 1))
+    startupScripts.forEach(script => {
+        if (ns.scriptRunning(script, homeServer)) {
+            ns.scriptKill(script, homeServer)
+        }
+        ns.exec(script, homeServer)
+    })
 }

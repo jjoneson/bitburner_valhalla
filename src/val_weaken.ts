@@ -1,7 +1,7 @@
 import type {BitBurner as NS} from "Bitburner"
-export const main = async function(ns: NS, args: any[]) {
-    let target = args[0]
-    let threadCount = args[1]
+export const main = async function(ns: NS) {
+    let target = ns.args[0]
+    let threadCount = ns.args[1]
 
-    ns.weaken(target, {threads: threadCount})
+    await ns.weaken(target, {threads: threadCount})
 }

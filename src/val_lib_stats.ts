@@ -1,6 +1,7 @@
 import type {BitBurner as NS} from "Bitburner"
-import { Server } from "./val_lib_servers"
-import { weakenAmount, desiredMoneyRatio } from "./val_lib_constants"
+import { Server } from "./val_lib_servers.js"
+import { weakenAmount, desiredMoneyRatio } from "./val_lib_constants.js"
+import { info } from "./val_lib_log.js"
 
 export const getWeakenTimeToZero = function(ns: NS, server: Server): number {
     return server.dynamic.weakenTime * getWeakensToZero(ns, server)
@@ -16,12 +17,13 @@ export const getGrowthTimeToMax = function(ns: NS, server: Server): number {
 
 export const getGrowthsToMax = function(ns: NS, server: Server): number {
     if(server.static.maxMoney == 0) return 0
+    if(server.static.maxMoney - server.dynamic.currentMoney <= 0) return 0
     return ns.growthAnalyze(server.static.name, server.static.maxMoney - server.dynamic.currentMoney)
 }
 
 export const getHackDeficit = function(ns: NS, server: Server): number {
-    if (server.static.maxMoney == 0) return 
-    return server.static.maxMoney * desiredMoneyRatio - server.dynamic.currentMoney
+    if (server.static.maxMoney == 0) return 0
+    return server.dynamic.currentMoney - server.static.maxMoney * desiredMoneyRatio
 }
 
 export const getHacksToTarget = function(ns: NS, server: Server): number {

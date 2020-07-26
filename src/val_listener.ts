@@ -1,9 +1,10 @@
 import type { BitBurner as NS } from "Bitburner"
-import { Ports, PortInfo } from "./val_lib_enum"
-import { ActionMessage } from "./val_lib_communication"
-import { info } from "./val_lib_log"
+import { Ports, PortInfo } from "./val_lib_enum.js"
+import { ActionMessage } from "./val_lib_communication.js"
+import { info } from "./val_lib_log.js"
 
 export const main = async function (ns: NS) {
+    ns.disableLog("ALL")
     while (true) {
         const message = ns.read(Ports.Actions) as string
         if (message == PortInfo.Empty) {
