@@ -132,11 +132,11 @@ export const main = async function (ns: NS) {
     while (true) {
         let targets = getSortedTargetServers(ns, getHackableServers(ns, new Array()))
         if (targets.length == 0) {
-            await ns.sleep(10000)
+            await ns.sleep(schedulingInterval)
             continue
         }
         await reap(ns, targets[0])
-        await ns.sleep(10000)
+        await ns.sleep(schedulingInterval)
     }
 }
 
