@@ -37,7 +37,8 @@ export const startupScripts: string[] = [
 ]
 export const minimumCashReserves: number = 300000000
 export const serverNamePrefix: string = "serv-"
-export const schedulingInterval: number = 2000
+export const schedulingInterval: number = 1000
+export const jobSegmentSpacing: number = 3000
 export const ramCost: number = 55000
 export const weakenAmount: number = 0.05
 export const hackAmount: number = 0.002

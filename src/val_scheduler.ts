@@ -4,7 +4,7 @@ import { ActionMessage } from "./val_lib_communication.js"
 import { getCurrentServers, getTotalAvailableRam, Server, getRootedServers, getSortedTargetServers, getHackableServers } from "./val_lib_servers.js"
 import { getGrowthsToMax, getWeakensToZero } from "./val_lib_stats.js"
 import { info } from "./val_lib_log.js"
-import { schedulingInterval, weakensPerHack, weakensPerGrow, maxGrowBatchSize } from "./val_lib_constants.js"
+import { schedulingInterval, weakensPerHack, weakensPerGrow, maxGrowBatchSize, jobSegmentSpacing } from "./val_lib_constants.js"
 
 const global_servers: Server[] = new Array()
 
@@ -61,7 +61,6 @@ const reap = async function (ns: NS, target: Server) {
             info(ns, `Could not dispatch all weakens for ${target.static.name}.  Sleeping for ${target.dynamic.weakenTime}`)
             await ns.sleep(target.dynamic.weakenTime)
         }
-        return
     }
 
 
@@ -72,13 +71,13 @@ const reap = async function (ns: NS, target: Server) {
             let weakenBatch = Math.ceil(grows / weakensPerGrow)
 
             const growAction = new DispatchAction(target.static.name, grows, Action.Grow)
-            while (await growAction.dispatch(ns, target.dynamic.growTime, growDelay) > 0) {
+            while (await growAction.dispatch(ns, target.dynamic.growTime, growDelay+schedulingInterval) > 0) {
                 info(ns, `Could not dispatch all grows for ${target.static.name}.  Sleeping for ${target.dynamic.growTime}`)
                 await ns.sleep(target.dynamic.growTime)
             }
 
             const weakenAction = new DispatchAction(target.static.name, weakenBatch, Action.Weaken)
-            while (await weakenAction.dispatch(ns, target.dynamic.weakenTime, weakenDelay) > 0) {
+            while (await weakenAction.dispatch(ns, target.dynamic.weakenTime, weakenDelay+schedulingInterval) > 0) {
                 info(ns, `Could not dispatch all weakens for ${target.static.name}.  Sleeping for ${target.dynamic.weakenTime}`)
                 await ns.sleep(target.dynamic.weakenTime)
             }
@@ -90,7 +89,7 @@ const reap = async function (ns: NS, target: Server) {
 
 
     const hackAction = new DispatchAction(target.static.name, incrementalHacksNeeded, Action.Hack)
-    while (await hackAction.dispatch(ns, target.dynamic.hackTime,hackDelay + schedulingInterval) > 0) {
+    while (await hackAction.dispatch(ns, target.dynamic.hackTime,hackDelay + jobSegmentSpacing*2) > 0) {
         info(ns, `Could not dispatch all hacks for ${target.static.name}.  Sleeping for ${target.dynamic.hackTime}`)
         await ns.sleep(target.dynamic.hackTime)
     }
@@ -98,13 +97,13 @@ const reap = async function (ns: NS, target: Server) {
     let weakenBatchSize = Math.ceil(incrementalHacksNeeded / weakensPerHack)
 
     const weakenAction = new DispatchAction(target.static.name, weakenBatchSize, Action.Weaken)
-    while (await weakenAction.dispatch(ns, target.dynamic.weakenTime, weakenDelay + schedulingInterval) > 0) {
+    while (await weakenAction.dispatch(ns, target.dynamic.weakenTime, weakenDelay + jobSegmentSpacing*2) > 0) {
         info(ns, `Could not dispatch all weakens for ${target.static.name}.  Sleeping for ${target.dynamic.weakenTime}`)
         await ns.sleep(target.dynamic.weakenTime)
     }
 
     const growAction = new DispatchAction(target.static.name, incremantalGrowthsNeeded, Action.Grow)
-    while (await growAction.dispatch(ns, target.dynamic.growTime, growDelay + schedulingInterval) > 0) {
+    while (await growAction.dispatch(ns, target.dynamic.growTime, growDelay + schedulingInterval + jobSegmentSpacing*2) > 0) {
         info(ns, `Could not dispatch all grows for ${target.static.name}.  Sleeping for ${target.dynamic.growTime}`)
         return
     }
@@ -112,7 +111,7 @@ const reap = async function (ns: NS, target: Server) {
     weakenBatchSize = Math.ceil(incremantalGrowthsNeeded / weakensPerGrow)
 
     const growWeakenAction = new DispatchAction(target.static.name, weakenBatchSize, Action.Weaken)
-    while (await growWeakenAction.dispatch(ns, target.dynamic.weakenTime, weakenDelay + schedulingInterval) > 0) {
+    while (await growWeakenAction.dispatch(ns, target.dynamic.weakenTime, weakenDelay + schedulingInterval + jobSegmentSpacing*2) > 0) {
         info(ns, `Could not dispatch all weakens for ${target.static.name}.  Sleeping for ${target.dynamic.weakenTime}`)
         await ns.sleep(target.dynamic.weakenTime)
     }
