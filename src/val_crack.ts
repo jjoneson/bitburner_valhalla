@@ -4,7 +4,7 @@ import { schedulingInterval } from "./val_lib_constants.js"
 import { info } from "./val_lib_log.js"
 
 export const main = async function (ns: NS) {
-    let servers = getUnrootedServers(ns, new Array())
+    let servers = new Array()
     while (true) {
         servers = getUnrootedServers(ns, servers)
         if (servers.length == 0) break

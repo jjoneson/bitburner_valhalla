@@ -37,12 +37,16 @@ export const startupScripts: string[] = [
 ]
 export const minimumCashReserves: number = 300000000
 export const serverNamePrefix: string = "serv-"
-export const schedulingInterval: number = 12000
+export const schedulingInterval: number = 60000
 export const ramCost: number = 55000
 export const weakenAmount: number = 0.05
 export const hackAmount: number = 0.002
 export const growAmount: number = 0.004
-export const hacksPerWeaken: number = Math.ceil(hackAmount/weakenAmount)
-export const growsPerWeaken: number = Math.ceil(growAmount/weakenAmount)
+export const weakensPerHack: number = weakenAmount/hackAmount
+export const weakensPerGrow: number = weakenAmount/growAmount
+export const hacksPerWeaken: number = hackAmount/weakenAmount
+export const growsPerWeaken: number = growAmount/weakenAmount
 export const desiredMoneyRatio: number = 0.9
+export const desiredFreeRamRatio: number = 0.05
+export const maxGrowBatchSize: number = 1000
 

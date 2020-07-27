@@ -7,7 +7,8 @@ export enum Action {
 export enum Ports {
     Actions = 1,
     Scheduling = 2,
-    Dispatching = 3
+    Dispatching = 3,
+    Ram = 4
 }
 
 export enum PortInfo {

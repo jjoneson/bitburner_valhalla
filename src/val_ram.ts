@@ -1,8 +1,13 @@
 import type {BitBurner as NS} from "Bitburner"
-import { ramCost, homeServer, serverNamePrefix, schedulingInterval, minimumCashReserves } from "./val_lib_constants.js";
+import { ramCost, homeServer, serverNamePrefix, schedulingInterval, desiredFreeRamRatio, minimumCashReserves } from "./val_lib_constants.js";
+import { getTotalMaximumRam, getTotalAvailableRam } from "./val_lib_servers.js";
 
 export const main = async function(ns: NS) {
     while(!allServersMaxed(ns)) {
+        if(getTotalAvailableRam(ns, new Array()) > getTotalMaximumRam(ns, new Array())*(1-desiredFreeRamRatio)) {
+            await ns.sleep(schedulingInterval)
+            continue
+        }
         let maxServers = ns.getPurchasedServerLimit()
         let ram = 2
         let purchasePrice = ram*ramCost;
@@ -13,6 +18,11 @@ export const main = async function(ns: NS) {
         }
 
         ram = ram/2
+
+        if(ram < 8) {
+            await ns.sleep(schedulingInterval)
+            continue
+        }
 
         let currentServers = ns.getPurchasedServers()
         for (let i = 0; i < maxServers; i++) {

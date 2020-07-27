@@ -1,6 +1,6 @@
 import type {BitBurner as NS} from "Bitburner"
-import { homeServer, crackingScript, schedulerScript, ramScript } from "./val_lib_constants.js"
-import { getTotalAvailableRam, getRootedServers } from "./val_lib_servers.js"
+import { homeServer, crackingScript, schedulerScript, ramScript, schedulingInterval } from "./val_lib_constants.js"
+import { getRootedServers } from "./val_lib_servers.js"
 
 export const main = async function(ns: NS) {
     // Kill any existing instances of scripts
@@ -21,16 +21,14 @@ export const main = async function(ns: NS) {
     const totalRamRequired = crackRam + schedulerRam + ramRam
 
     // start cracking to get more ram
-    while (getTotalAvailableRam(ns,servers) < totalRamRequired) {
-        ns.exec(crackingScript, homeServer, 1)
-        await ns.sleep(100)
-    }
+    ns.exec(crackingScript, homeServer, 1)
+    await ns.sleep(1000)
     ns.scriptKill(crackingScript, homeServer)
 
     // run scripts
     let crackRunning = false
     let ramRunning = false
-    for (const server of servers) {
+    for (const server of getRootedServers(ns, new Array())) {
         if (server.static.name == homeServer) continue
         if (!crackRunning && server.dynamic.availableRam > crackRam) {
             ns.exec(crackingScript, server.static.name, 1)
@@ -44,6 +42,6 @@ export const main = async function(ns: NS) {
         }
         if (ramRunning && crackRunning) break
     }
-    
+
     ns.spawn(schedulerScript, 1)
 }

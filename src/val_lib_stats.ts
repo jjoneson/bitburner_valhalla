@@ -1,7 +1,6 @@
 import type {BitBurner as NS} from "Bitburner"
 import { Server } from "./val_lib_servers.js"
 import { weakenAmount, desiredMoneyRatio } from "./val_lib_constants.js"
-import { info } from "./val_lib_log.js"
 
 export const getWeakenTimeToZero = function(ns: NS, server: Server): number {
     return server.dynamic.weakenTime * getWeakensToZero(ns, server)
@@ -34,8 +33,15 @@ export const getHacksToTarget = function(ns: NS, server: Server): number {
     return ns.hackAnalyzeThreads(server.static.name, deficit)
 }
 
+export const getHackChance = function(ns: NS, server: Server): number {
+    let skillMulti = (1.75*ns.getHackingLevel())
+    let difficultyMulti = (100 - server.dynamic.currentSecurityLevel) / 100
+    let skillChance = 1 - (server.static.requiredHackingLevel / skillMulti)
+    return skillChance * difficultyMulti
+}
+
 export const getHackTimeToTarget = function(ns: NS, server: Server): number {
-    return getHackTimeToTarget(ns, server) * server.dynamic.hackTime
+    return getHacksToTarget(ns, server) * server.dynamic.hackTime / getHackChance(ns, server)
 }
 
 export const getServerValue = function(ns: NS, server: Server): number {
@@ -44,9 +50,17 @@ export const getServerValue = function(ns: NS, server: Server): number {
     if (growthTimeToMax <= 0) {
         growthTimeToMax = 0.1
     }
-    return server.static.maxMoney/growthTimeToMax
+    let hackTimeToMax = getHackTimeToTarget(ns, server)
+    if (hackTimeToMax <= 0) {
+        hackTimeToMax = 0.1
+    }
+    let weakenTimeToZero = getWeakenTimeToZero(ns, server)
+    if (weakenTimeToZero <= 0) {
+        weakenTimeToZero = 0.1
+    }
+    return server.static.maxMoney/(growthTimeToMax+hackTimeToMax+weakenTimeToZero)
 }
 
 export const sortServersByValue = function(ns: NS, servers: Server[]): Server[] {
-    return servers.sort((a, b) => getServerValue(ns, a) - getServerValue(ns, b))
+    return servers.sort((a, b) => getServerValue(ns, b) - getServerValue(ns, a))
 }
