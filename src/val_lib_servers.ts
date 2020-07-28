@@ -1,6 +1,7 @@
 import type { BitBurner as NS } from "Bitburner"
 import { serverNamePrefix, homeServer } from "./val_lib_constants.js"
 import { sortServersByValue } from "./val_lib_stats.js"
+import { warn, info } from "./val_lib_log.js"
 
 export interface ServerStaticProps {
     name: string
@@ -69,13 +70,19 @@ export const getNewServers = function (ns: NS, servers?: Server[]): Server[] {
 
     for (let i = 0; i < servers.length; i++) {
         if (servers[i].static.name.startsWith(serverNamePrefix)) continue
-        ns.scan(servers[i].static.name).forEach(hostName => {
-            if (!servers.some(server => server.static.name == hostName)) {
-                try {
-                    servers.push(new Server(ns, hostName))
-                } catch{ }
-            }
-        });
+        try {
+            ns.scan(servers[i].static.name).forEach(hostName => {
+                if (!servers.some(server => server.static.name == hostName)) {
+                    try {
+                        servers.push(new Server(ns, hostName))
+                    } catch (error) {
+                        warn(ns, error.message, error.stacktrace)
+                    }
+                }
+            })
+        } catch (error) {
+            warn(ns, error.message, error.stack)
+        }
     }
 
     for (const purchased of ns.getPurchasedServers()) {
@@ -84,7 +91,6 @@ export const getNewServers = function (ns: NS, servers?: Server[]): Server[] {
                 servers.push(new Server(ns, purchased))
             } catch{ }
     }
-
     return servers;
 }
 
@@ -108,16 +114,16 @@ export const getSortedTargetServers = function (ns: NS, servers: Server[]): Serv
 }
 
 export const getTargetableServers = function (ns: NS, servers: Server[]): Server[] {
-    while (servers.some(serv => serv.static.name.startsWith(serverNamePrefix))) {
-        servers.splice(servers.findIndex(serv => serv.static.name.startsWith(serverNamePrefix)), 1)
-    }
+    // while (servers.some(serv => serv.static.name.startsWith(serverNamePrefix))) {
+    //     servers.splice(servers.findIndex(serv => serv.static.name.startsWith(serverNamePrefix)), 1)
+    // }
 
-    while (servers.some(serv => serv.static.maxMoney == 0)) {
-        servers.splice(servers.findIndex(serv => serv.static.maxMoney == 0), 1)
-    }
+    // while (servers.some(serv => serv.static.maxMoney == 0)) {
+    //     servers.splice(servers.findIndex(serv => serv.static.maxMoney == 0), 1)
+    // }
 
-    servers.splice(servers.findIndex(serv => serv.static.name == homeServer), 1)
-    servers.splice(servers.findIndex(serv => serv.static.name == "darkweb"), 1)
+    // servers.splice(servers.findIndex(serv => serv.static.name == homeServer), 1)
+    // servers.splice(servers.findIndex(serv => serv.static.name == "darkweb"), 1)
     return servers
 }
 

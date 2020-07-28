@@ -1,6 +1,6 @@
 import type {BitBurner as NS} from "Bitburner"
 import { Server } from "./val_lib_servers.js"
-import { weakenAmount, desiredMoneyRatio } from "./val_lib_constants.js"
+import { weakenAmount, desiredMoneyRatio, serverNamePrefix, homeServer } from "./val_lib_constants.js"
 
 export const getWeakenTimeToZero = function(ns: NS, server: Server): number {
     return server.dynamic.weakenTime * getWeakensToZero(ns, server)
@@ -46,6 +46,10 @@ export const getHackTimeToTarget = function(ns: NS, server: Server): number {
 
 export const getServerValue = function(ns: NS, server: Server): number {
     if (server.static.maxMoney == 0) return 0
+    if (server.static.name.startsWith(serverNamePrefix)) return 0
+    if (server.static.name == homeServer) return 0
+    if (server.static.name == "darkweb") return 0
+    
     let growthTimeToMax = getGrowthTimeToMax(ns, server)
     if (growthTimeToMax <= 0) {
         growthTimeToMax = 0.1

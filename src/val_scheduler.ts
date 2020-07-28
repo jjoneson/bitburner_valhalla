@@ -2,12 +2,78 @@ import type { BitBurner as NS } from "Bitburner"
 import { Action, Status } from "./val_lib_enum.js"
 import { ActionMessage } from "./val_lib_communication.js"
 import { getCurrentServers, getTotalAvailableRam, Server, getRootedServers, getSortedTargetServers, getHackableServers } from "./val_lib_servers.js"
-import { getGrowthsToMax, getWeakensToZero } from "./val_lib_stats.js"
-import { info } from "./val_lib_log.js"
-import { schedulingInterval, weakensPerHack, weakensPerGrow, maxGrowBatchSize, jobSegmentSpacing } from "./val_lib_constants.js"
+import { getGrowthsToMax, getWeakensToZero, getHacksToTarget } from "./val_lib_stats.js"
+import { info, warn } from "./val_lib_log.js"
+import { schedulingInterval, weakensPerHack, weakensPerGrow, maxGrowBatchSize, jobSegmentSpacing, desiredMoneyRatio } from "./val_lib_constants.js"
 
 const global_servers: Server[] = new Array()
 
+
+class Stats {
+    origin: number
+    initializationTime: number
+    minHackTime: number
+    minGrowTime: number
+    minWeakenTime: number
+    growDelay: number
+    hackDelay: number
+    weakenDelay: number
+    growThreads: number
+    hackThreads: number
+    longestOperationTime: number
+
+    constructor(origin: number) {
+        this.origin = origin
+        this.initializationTime = 0
+        this.minWeakenTime = Number.MAX_VALUE
+        this.minHackTime = Number.MAX_VALUE
+        this.minGrowTime = Number.MAX_VALUE
+        this.growDelay = 0
+        this.hackDelay = 0
+        this.weakenDelay = 0
+        this.growThreads = 0
+        this.hackThreads = 0
+        this.longestOperationTime = 0
+    }
+
+    update(ns: NS, server: Server): Stats {
+        let hostname = server.static.name
+        this.minHackTime = ns.getHackTime(hostname) < this.minHackTime ? ns.getHackTime(hostname) : this.minHackTime
+        this.minGrowTime = ns.getGrowTime(hostname) < this.minGrowTime ? ns.getGrowTime(hostname) : this.minGrowTime
+        this.minWeakenTime = ns.getWeakenTime(hostname) < this.minWeakenTime ? ns.getWeakenTime(hostname) : this.minWeakenTime
+        this.longestOperationTime = this.getLongestOperationTime()
+        this.growDelay = this.longestOperationTime*1000 - this.minGrowTime*1000
+        this.weakenDelay = this.longestOperationTime*1000 - this.minWeakenTime*1000
+        this.hackDelay = this.longestOperationTime*1000 - this.minHackTime*1000
+        if (server.dynamic.currentMoney > server.static.maxMoney * desiredMoneyRatio - 0.02 && server.dynamic.currentMoney <= server.static.maxMoney * desiredMoneyRatio) {
+            this.growThreads = getGrowthsToMax(ns, server)
+        }
+        if (server.dynamic.currentMoney >= server.static.maxMoney) {
+            this.hackThreads = getHacksToTarget(ns, server)
+        }
+        return this
+    }
+
+    getLongestOperationTime = function (): number {
+        let times = [this.minHackTime, this.minGrowTime, this.minWeakenTime]
+        times.sort((a, b) => a - b)
+        return times.pop()
+    }
+
+    getInitializationDelay(delay: number, operationTime: number): number {
+        const remainingTime = this.getInitializationTimeRemaining()
+        if (remainingTime > (operationTime + delay)) {
+            return remainingTime - operationTime - delay
+        }
+        return delay
+    }
+
+    getInitializationTimeRemaining(): number {
+        return new Date().getTime() - this.initializationTime - this.origin
+    }
+}
+
+const targets = new Map<string, Stats>()
 
 class DispatchAction {
     target: string
@@ -34,8 +100,7 @@ class DispatchAction {
             this.threads -= scheduledThreads
 
             ns.scp(this.action, server.static.name)
-            let delay = initialDelay
-            if (ns.exec(this.action, server.static.name, scheduledThreads, this.target, scheduledThreads.toString(), delay.toString(), (new Date()).getTime().toString()) == 0) {
+            if (ns.exec(this.action, server.static.name, scheduledThreads, this.target, scheduledThreads.toString(), initialDelay.toString(), (new Date()).getTime().toString()) == 0) {
                 continue
             }
             info(ns, JSON.stringify(new ActionMessage(this.action, this.target, scheduledThreads, Status.Processing, operationTime), null, 2))
@@ -45,24 +110,33 @@ class DispatchAction {
     }
 }
 
-const reap = async function (ns: NS, target: Server) {
+const getDelay = function (initialWeakenTime: number, operationTime: number, operationDelay: number): number {
+    if (initialWeakenTime*1000 > (operationTime*1000 + operationDelay)) {
+        return initialWeakenTime*1000 - operationTime*1000 - operationDelay
+    }
+    return operationDelay
+}
+
+const initialize = async function (ns: NS, target: Server, stats: Stats) {
+    const host = target.static.name
+
     const totalWeakensNeeded = getWeakensToZero(ns, target)
     let totalGrowsNeeded = getGrowthsToMax(ns, target)
-    const longestTime = getLongestOperationTime(target)
-    const growDelay = longestTime - target.dynamic.growTime
-    const hackDelay = longestTime - target.dynamic.hackTime
-    const weakenDelay = longestTime - target.dynamic.weakenTime
 
     //Initial Weaken Period
-
+    let initiaWeakenTime = 0
     if (totalWeakensNeeded > 0) {
-        const weakenAction = new DispatchAction(target.static.name, totalWeakensNeeded, Action.Weaken)
-        while (await weakenAction.dispatch(ns, target.dynamic.weakenTime, 0) > 0) {
-            info(ns, `Could not dispatch all weakens for ${target.static.name}.  Sleeping for ${target.dynamic.weakenTime}`)
-            await ns.sleep(target.dynamic.weakenTime)
-        }
+        initiaWeakenTime = target.dynamic.weakenTime
+        await dispatch(ns,
+            Action.Weaken,
+            host,
+            totalWeakensNeeded,
+            initiaWeakenTime,
+            0)
     }
 
+    let growDelay = getDelay(initiaWeakenTime, stats.minGrowTime, stats.growDelay)
+    let weakenDelay = getDelay(initiaWeakenTime, stats.minWeakenTime, stats.weakenDelay)
 
     //Initial Growth Period
     if (totalGrowsNeeded > 0) {
@@ -70,57 +144,94 @@ const reap = async function (ns: NS, target: Server) {
             let grows = (totalGrowsNeeded > maxGrowBatchSize) ? maxGrowBatchSize : totalGrowsNeeded
             let weakenBatch = Math.ceil(grows / weakensPerGrow)
 
-            const growAction = new DispatchAction(target.static.name, grows, Action.Grow)
-            while (await growAction.dispatch(ns, target.dynamic.growTime, growDelay+schedulingInterval) > 0) {
-                info(ns, `Could not dispatch all grows for ${target.static.name}.  Sleeping for ${target.dynamic.growTime}`)
-                await ns.sleep(target.dynamic.growTime)
-            }
-
-            const weakenAction = new DispatchAction(target.static.name, weakenBatch, Action.Weaken)
-            while (await weakenAction.dispatch(ns, target.dynamic.weakenTime, weakenDelay+schedulingInterval) > 0) {
-                info(ns, `Could not dispatch all weakens for ${target.static.name}.  Sleeping for ${target.dynamic.weakenTime}`)
-                await ns.sleep(target.dynamic.weakenTime)
-            }
+            await dispatch(ns,
+                Action.Grow,
+                host,
+                grows,
+                stats.minGrowTime,
+                growDelay + schedulingInterval)
+            await dispatch(ns,
+                Action.Weaken,
+                host,
+                weakenBatch,
+                stats.minWeakenTime,
+                weakenDelay + schedulingInterval)
         }
     }
 
-    let incrementalHacksNeeded = ns.hackAnalyzeThreads(target.static.name, target.static.maxMoney * 0.1)
-    let incremantalGrowthsNeeded = ns.growthAnalyze(target.static.name, target.static.maxMoney * 0.1)
-
-
-    const hackAction = new DispatchAction(target.static.name, incrementalHacksNeeded, Action.Hack)
-    while (await hackAction.dispatch(ns, target.dynamic.hackTime,hackDelay + jobSegmentSpacing*2) > 0) {
-        info(ns, `Could not dispatch all hacks for ${target.static.name}.  Sleeping for ${target.dynamic.hackTime}`)
-        await ns.sleep(target.dynamic.hackTime)
-    }
-
-    let weakenBatchSize = Math.ceil(incrementalHacksNeeded / weakensPerHack)
-
-    const weakenAction = new DispatchAction(target.static.name, weakenBatchSize, Action.Weaken)
-    while (await weakenAction.dispatch(ns, target.dynamic.weakenTime, weakenDelay + jobSegmentSpacing*2) > 0) {
-        info(ns, `Could not dispatch all weakens for ${target.static.name}.  Sleeping for ${target.dynamic.weakenTime}`)
-        await ns.sleep(target.dynamic.weakenTime)
-    }
-
-    const growAction = new DispatchAction(target.static.name, incremantalGrowthsNeeded, Action.Grow)
-    while (await growAction.dispatch(ns, target.dynamic.growTime, growDelay + schedulingInterval + jobSegmentSpacing*2) > 0) {
-        info(ns, `Could not dispatch all grows for ${target.static.name}.  Sleeping for ${target.dynamic.growTime}`)
-        return
-    }
-
-    weakenBatchSize = Math.ceil(incremantalGrowthsNeeded / weakensPerGrow)
-
-    const growWeakenAction = new DispatchAction(target.static.name, weakenBatchSize, Action.Weaken)
-    while (await growWeakenAction.dispatch(ns, target.dynamic.weakenTime, weakenDelay + schedulingInterval + jobSegmentSpacing*2) > 0) {
-        info(ns, `Could not dispatch all weakens for ${target.static.name}.  Sleeping for ${target.dynamic.weakenTime}`)
-        await ns.sleep(target.dynamic.weakenTime)
+    if (totalWeakensNeeded > 0 || totalGrowsNeeded > 0) {
+        stats.initializationTime = (target.dynamic.weakenTime*1000 + weakenDelay) > (target.dynamic.growTime*1000 + growDelay + schedulingInterval) ?
+        target.dynamic.weakenTime*1000 + weakenDelay :
+        target.dynamic.growTime*1000 + growDelay + schedulingInterval
     }
 }
 
-export const getLongestOperationTime = function(server: Server): number {
-    let times = [server.dynamic.hackTime, server.dynamic.growTime, server.dynamic.weakenTime]
-    times.sort((a, b) => a - b)
-    return times.pop()
+const reap = async function (ns: NS, target: Server) {
+    if (!targets.has(target.static.name)) {
+        targets.set(target.static.name, new Stats((new Date().getTime())))
+    }
+    const host = target.static.name
+    const stats = targets.get(host).update(ns, target)
+
+    if (stats.initializationTime <= 0) {
+        await initialize(ns, target, stats)
+    }
+
+    let hackDelay = stats.getInitializationDelay(stats.hackDelay, stats.minHackTime)
+    let growDelay = stats.getInitializationDelay(stats.growDelay, stats.minGrowTime)
+    let weakenDelay = stats.getInitializationDelay(stats.weakenDelay, stats.minWeakenTime)
+
+    // Schedule Hacks  
+    let hacks = stats.hackThreads
+    
+    if (hacks <= 0) {
+        hacks = ns.hackAnalyzeThreads(host, target.static.maxMoney * 0.1)
+    }
+
+    await dispatch(ns,
+        Action.Hack,
+        host,
+        hacks,
+        stats.minHackTime,
+        hackDelay + jobSegmentSpacing + schedulingInterval)
+
+    let weakenBatchSize = Math.ceil(hacks / weakensPerHack)
+
+    await dispatch(ns,
+        Action.Weaken,
+        host,
+        weakenBatchSize,
+        stats.minWeakenTime,
+        (weakenDelay + jobSegmentSpacing) + (schedulingInterval * 2))
+
+    //Schedule Grows
+    let grows = stats.growThreads
+    if (grows <= 0) {
+        grows = ns.growthAnalyze(target.static.name, target.static.maxMoney * 0.1)
+    }
+
+    await dispatch(ns,
+        Action.Grow,
+        host,
+        grows,
+        stats.minGrowTime,
+        growDelay + (jobSegmentSpacing * 2) + schedulingInterval)
+
+    weakenBatchSize = Math.ceil(grows / weakensPerGrow)
+
+    await dispatch(ns,
+        Action.Weaken,
+        host,
+        weakenBatchSize,
+        stats.minWeakenTime,
+        weakenDelay + (jobSegmentSpacing * 2) + (schedulingInterval * 2))
+}
+
+export const dispatch = async function (ns: NS, action: Action, hostname: string, batchSize: number, operationTime: number, delay: number) {
+    const dispatchAction = new DispatchAction(hostname, batchSize, action)
+    while (await dispatchAction.dispatch(ns, operationTime, delay)) {
+        await (ns.sleep(500))
+    }
 }
 
 export const main = async function (ns: NS) {
@@ -131,11 +242,12 @@ export const main = async function (ns: NS) {
     while (true) {
         let targets = getSortedTargetServers(ns, getHackableServers(ns, new Array()))
         if (targets.length == 0) {
+            warn(ns, "no available targets", "")
             await ns.sleep(schedulingInterval)
             continue
         }
         await reap(ns, targets[0])
-        await ns.sleep(schedulingInterval)
+        await ns.sleep(100)
     }
 }
 

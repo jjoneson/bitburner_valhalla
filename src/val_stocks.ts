@@ -121,8 +121,8 @@ export const main = async function(ns: NS) {
             buy(ns, topStock, longShares)
 
         let shortShares = shortableShares(ns, bottomStock, corpus)
-        if ((shortShares * topStock.expectReturn * topStock.price * cycles * -1) > stockTradeComission)
-            buy(ns, bottomStock, shortShares)
+        if ((shortShares * bottomStock.expectReturn * bottomStock.price * cycles * -1) > stockTradeComission)
+            short(ns, bottomStock, shortShares)
 
         await ns.sleep(5 * 1000 * cycles + 200)
     }
@@ -180,7 +180,7 @@ const minimumCashOnHand = function(ns: NS, corpus: number): number {
 }
 
 const shortableShares = function(ns: NS, stock: Stock, corpus: number): number {
-    let spendableIncome = minimumCashOnHand(ns, corpus) - ns.getServerMoneyAvailable(homeServer)
+    let spendableIncome = ns.getServerMoneyAvailable(homeServer) - minimumCashOnHand(ns, corpus)
     if (spendableIncome <= 0) return 0
     let shares = Math.floor((spendableIncome - stockTradeComission) / stock.price)
     if (shares > (stock.maxShares - stock.shortShares)) {
@@ -190,7 +190,7 @@ const shortableShares = function(ns: NS, stock: Stock, corpus: number): number {
 }
 
 const buyableShares = function(ns: NS, stock: Stock, corpus: number): number {
-    let spendableIncome = minimumCashOnHand(ns, corpus) - ns.getServerMoneyAvailable(homeServer)
+    let spendableIncome = ns.getServerMoneyAvailable(homeServer) - minimumCashOnHand(ns, corpus)
     if (spendableIncome <= 0) return 0
     let shares = Math.floor((spendableIncome - stockTradeComission) / stock.price)
     if (shares > (stock.maxShares - stock.longShares)) {
