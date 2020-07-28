@@ -42,9 +42,9 @@ class Stats {
         this.minGrowTime = ns.getGrowTime(hostname) < this.minGrowTime ? ns.getGrowTime(hostname) : this.minGrowTime
         this.minWeakenTime = ns.getWeakenTime(hostname) < this.minWeakenTime ? ns.getWeakenTime(hostname) : this.minWeakenTime
         this.longestOperationTime = this.getLongestOperationTime()
-        this.growDelay = this.longestOperationTime*1000 - this.minGrowTime*1000
-        this.weakenDelay = this.longestOperationTime*1000 - this.minWeakenTime*1000
-        this.hackDelay = this.longestOperationTime*1000 - this.minHackTime*1000
+        this.growDelay = this.longestOperationTime * 1000 - this.minGrowTime * 1000
+        this.weakenDelay = this.longestOperationTime * 1000 - this.minWeakenTime * 1000
+        this.hackDelay = this.longestOperationTime * 1000 - this.minHackTime * 1000
         if (server.dynamic.currentMoney > server.static.maxMoney * desiredMoneyRatio - 0.02 && server.dynamic.currentMoney <= server.static.maxMoney * desiredMoneyRatio) {
             this.growThreads = getGrowthsToMax(ns, server)
         }
@@ -111,8 +111,8 @@ class DispatchAction {
 }
 
 const getDelay = function (initialWeakenTime: number, operationTime: number, operationDelay: number): number {
-    if (initialWeakenTime*1000 > (operationTime*1000 + operationDelay)) {
-        return initialWeakenTime*1000 - operationTime*1000 - operationDelay
+    if (initialWeakenTime * 1000 > (operationTime * 1000 + operationDelay)) {
+        return initialWeakenTime * 1000 - operationTime * 1000 - operationDelay
     }
     return operationDelay
 }
@@ -149,20 +149,20 @@ const initialize = async function (ns: NS, target: Server, stats: Stats) {
                 host,
                 grows,
                 stats.minGrowTime,
-                growDelay + schedulingInterval)
+                growDelay + jobSegmentSpacing)
             await dispatch(ns,
                 Action.Weaken,
                 host,
                 weakenBatch,
                 stats.minWeakenTime,
-                weakenDelay + schedulingInterval)
+                weakenDelay + jobSegmentSpacing)
         }
     }
 
     if (totalWeakensNeeded > 0 || totalGrowsNeeded > 0) {
-        stats.initializationTime = (target.dynamic.weakenTime*1000 + weakenDelay) > (target.dynamic.growTime*1000 + growDelay + schedulingInterval) ?
-        target.dynamic.weakenTime*1000 + weakenDelay :
-        target.dynamic.growTime*1000 + growDelay + schedulingInterval
+        stats.initializationTime = (target.dynamic.weakenTime * 1000 + weakenDelay) > (target.dynamic.growTime * 1000 + growDelay + jobSegmentSpacing) ?
+            target.dynamic.weakenTime * 1000 + weakenDelay :
+            target.dynamic.growTime * 1000 + growDelay + jobSegmentSpacing
     }
 }
 
@@ -173,7 +173,13 @@ const reap = async function (ns: NS, target: Server) {
     const host = target.static.name
     const stats = targets.get(host).update(ns, target)
 
-    if (stats.initializationTime <= 0) {
+    if (stats.initializationTime <= 0 ||
+        (
+            (target.dynamic.currentMoney < target.static.maxMoney * (desiredMoneyRatio - 0.1))
+            &&
+            stats.getInitializationTimeRemaining() < 0
+        )) {
+        stats.origin = new Date().getTime()
         await initialize(ns, target, stats)
     }
 
@@ -183,7 +189,7 @@ const reap = async function (ns: NS, target: Server) {
 
     // Schedule Hacks  
     let hacks = stats.hackThreads
-    
+
     if (hacks <= 0) {
         hacks = ns.hackAnalyzeThreads(host, target.static.maxMoney * 0.1)
     }
@@ -193,7 +199,7 @@ const reap = async function (ns: NS, target: Server) {
         host,
         hacks,
         stats.minHackTime,
-        hackDelay + jobSegmentSpacing + schedulingInterval)
+        hackDelay + jobSegmentSpacing)
 
     let weakenBatchSize = Math.ceil(hacks / weakensPerHack)
 
@@ -202,7 +208,7 @@ const reap = async function (ns: NS, target: Server) {
         host,
         weakenBatchSize,
         stats.minWeakenTime,
-        (weakenDelay + jobSegmentSpacing) + (schedulingInterval * 2))
+        weakenDelay + (jobSegmentSpacing * 1.5))
 
     //Schedule Grows
     let grows = stats.growThreads
@@ -215,7 +221,7 @@ const reap = async function (ns: NS, target: Server) {
         host,
         grows,
         stats.minGrowTime,
-        growDelay + (jobSegmentSpacing * 2) + schedulingInterval)
+        growDelay + (jobSegmentSpacing * 2))
 
     weakenBatchSize = Math.ceil(grows / weakensPerGrow)
 
@@ -224,7 +230,7 @@ const reap = async function (ns: NS, target: Server) {
         host,
         weakenBatchSize,
         stats.minWeakenTime,
-        weakenDelay + (jobSegmentSpacing * 2) + (schedulingInterval * 2))
+        weakenDelay + (jobSegmentSpacing * 2))
 }
 
 export const dispatch = async function (ns: NS, action: Action, hostname: string, batchSize: number, operationTime: number, delay: number) {
@@ -247,7 +253,7 @@ export const main = async function (ns: NS) {
             continue
         }
         await reap(ns, targets[0])
-        await ns.sleep(100)
+        await ns.sleep(schedulingInterval)
     }
 }
 
