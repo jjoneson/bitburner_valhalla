@@ -1,12 +1,10 @@
 import type { BitBurner as NS } from "Bitburner"
 import { Action, Status } from "./val_lib_enum.js"
 import { ActionMessage } from "./val_lib_communication.js"
-import { getCurrentServers, getTotalAvailableRam, Server, getRootedServers, getSortedTargetServers, getHackableServers } from "./val_lib_servers.js"
+import { getTotalAvailableRam, Server, getRootedServers, getSortedTargetServers, getHackableServers } from "./val_lib_servers.js"
 import { getGrowthsToMax, getWeakensToZero, getHacksToTarget } from "./val_lib_stats.js"
 import { info, warn } from "./val_lib_log.js"
 import { schedulingInterval, weakensPerHack, weakensPerGrow, maxGrowBatchSize, jobSegmentSpacing, desiredMoneyRatio } from "./val_lib_constants.js"
-
-const global_servers: Server[] = new Array()
 
 
 class Stats {
@@ -69,7 +67,7 @@ class Stats {
     }
 
     getInitializationTimeRemaining(): number {
-        return new Date().getTime() - this.initializationTime - this.origin
+        return new Date().getTime() - this.initializationTime
     }
 }
 
@@ -138,22 +136,25 @@ const initialize = async function (ns: NS, target: Server, stats: Stats) {
     let growDelay = getDelay(initiaWeakenTime, stats.minGrowTime, stats.growDelay)
     let weakenDelay = getDelay(initiaWeakenTime, stats.minWeakenTime, stats.weakenDelay)
 
+    let availableRam = getTotalAvailableRam(ns, new Array())
+    let availableThreads = availableRam / ns.getScriptRam(Action.Grow)
+
     //Initial Growth Period
     if (totalGrowsNeeded > 0) {
-        for (; totalGrowsNeeded > 0; totalGrowsNeeded -= maxGrowBatchSize) {
-            let grows = (totalGrowsNeeded > maxGrowBatchSize) ? maxGrowBatchSize : totalGrowsNeeded
-            let weakenBatch = Math.ceil(grows / weakensPerGrow)
+        let grows = (totalGrowsNeeded > maxGrowBatchSize) ? maxGrowBatchSize : totalGrowsNeeded
+        let growThreads = Math.floor(availableThreads / (maxGrowBatchSize + maxGrowBatchSize*weakensPerGrow)) == 0 ? Math.floor(availableThreads - (availableThreads*weakensPerGrow)) : grows
+        for (; totalGrowsNeeded > 0; totalGrowsNeeded -= growThreads) {
 
             await dispatch(ns,
                 Action.Grow,
                 host,
-                grows,
+                growThreads,
                 stats.minGrowTime,
                 growDelay + jobSegmentSpacing)
             await dispatch(ns,
                 Action.Weaken,
                 host,
-                weakenBatch,
+                growThreads*weakensPerGrow,
                 stats.minWeakenTime,
                 weakenDelay + jobSegmentSpacing)
         }
@@ -187,50 +188,62 @@ const reap = async function (ns: NS, target: Server) {
     let growDelay = stats.getInitializationDelay(stats.growDelay, stats.minGrowTime)
     let weakenDelay = stats.getInitializationDelay(stats.weakenDelay, stats.minWeakenTime)
 
+    let availableRam = getTotalAvailableRam(ns, new Array())
+    let availableThreads = availableRam / ns.getScriptRam(Action.Grow)
+
     // Schedule Hacks  
     let hacks = stats.hackThreads
 
     if (hacks <= 0) {
         hacks = ns.hackAnalyzeThreads(host, target.static.maxMoney * 0.1)
+        if (hacks <= 0) {
+            return
+        }
     }
 
-    await dispatch(ns,
-        Action.Hack,
-        host,
-        hacks,
-        stats.minHackTime,
-        hackDelay + jobSegmentSpacing)
+    let weakenBatch = Math.ceil(hacks * weakensPerHack)
+    let hackThreads = Math.floor(availableThreads / (hacks + weakenBatch)) == 0 ? Math.floor(availableThreads - (availableThreads*weakensPerHack)) : hacks
+    for (; hacks > 0; hacks -= hackThreads) {
 
-    let weakenBatchSize = Math.ceil(hacks / weakensPerHack)
-
-    await dispatch(ns,
-        Action.Weaken,
-        host,
-        weakenBatchSize,
-        stats.minWeakenTime,
-        weakenDelay + (jobSegmentSpacing * 1.5))
-
+        await dispatch(ns,
+            Action.Grow,
+            host,
+            hackThreads,
+            stats.minGrowTime,
+            hackDelay + jobSegmentSpacing)
+        await dispatch(ns,
+            Action.Weaken,
+            host,
+            hackThreads*weakensPerHack,
+            stats.minWeakenTime,
+            weakenDelay + jobSegmentSpacing)
+    }
     //Schedule Grows
+
+
     let grows = stats.growThreads
+
     if (grows <= 0) {
         grows = ns.growthAnalyze(target.static.name, target.static.maxMoney * 0.1)
     }
-
+    weakenBatch = Math.ceil(grows * weakensPerGrow)
+    let growThreads = Math.floor(availableThreads / (maxGrowBatchSize + weakenBatch)) == 0 ? Math.floor(availableThreads - (availableThreads*weakensPerGrow)) : grows
+    for (; grows > 0; grows -= growThreads) {
     await dispatch(ns,
         Action.Grow,
         host,
-        grows,
+        growThreads,
         stats.minGrowTime,
         growDelay + (jobSegmentSpacing * 2))
 
-    weakenBatchSize = Math.ceil(grows / weakensPerGrow)
 
     await dispatch(ns,
         Action.Weaken,
         host,
-        weakenBatchSize,
+        growThreads*weakensPerGrow,
         stats.minWeakenTime,
         weakenDelay + (jobSegmentSpacing * 2))
+    }
 }
 
 export const dispatch = async function (ns: NS, action: Action, hostname: string, batchSize: number, operationTime: number, delay: number) {
@@ -242,8 +255,6 @@ export const dispatch = async function (ns: NS, action: Action, hostname: string
 
 export const main = async function (ns: NS) {
     ns.disableLog("ALL")
-    getCurrentServers(ns, global_servers)
-    const stats = { ram: getTotalAvailableRam(ns, global_servers), expectedFinishTime: 0 }
 
     while (true) {
         let targets = getSortedTargetServers(ns, getHackableServers(ns, new Array()))
